@@ -1175,3 +1175,87 @@ nav {
     margin-bottom: 1rem;
   }
 }
+
+.walkthrough-toggle.details .summary {
+  overflow: initial;
+  padding: 0;
+}
+
+.walkthrough-toggle.details[open] .summary + *:first-of-type {
+  margin-top: 0.25rem;
+}
+
+.walkthrough-toggle {
+  position: relative;
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip {
+  background: var(--color-bg-dark);
+  border: solid var(--line-width) var(--color-bg-light);
+  position: absolute;
+  top:105%;
+  top: calc((100% + .5rem));
+  z-index: 999999;
+  right:0;
+  min-width: 450px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: normal;
+}
+
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow {
+  top: calc((.5rem + 1px) * -1);
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow {
+  position: absolute;
+  display: block;
+  width: 1rem;
+  height: .5rem;
+  margin: 0;
+  right: 0;
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::after,
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::before {
+  border-width: 0 .5rem .5rem .5rem;
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::after,
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::before {
+  position: absolute;
+  display: block;
+  content: "";
+  border-color: transparent;
+  border-style: solid;
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::before {
+  top: 0;
+  border-bottom-color: rgba(0,0,0,.25);
+}
+
+.walkthrough-toggle .walkthrough-toggle-tooltip .-arrow::after {
+  top: 1px;
+  border-bottom-color: var(--color-bg-light);
+}
+
+.walkthrough-toggle-tooltip button {
+  margin-left: 1rem;
+}
+
+.tour-overlay {
+  position: absolute;
+  top:0;
+  left:0;
+  width: 100%;
+  height: 100%;
+  z-index: 100000000000;
+  border: 5px solid var(--color-primary);
+}
+
+.tour-nav {
+  background: var(--color-primary);
+  position: relative;
+}

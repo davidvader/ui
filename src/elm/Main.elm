@@ -141,6 +141,7 @@ import Vela
         , isComplete
         , stringToTheme
         )
+import Walkthrough
 
 
 
@@ -187,6 +188,7 @@ type alias Model =
     , theme : Theme
     , shift : Bool
     , visibility : Visibility
+    , walkthrough : Walkthrough.Model
     }
 
 
@@ -244,6 +246,7 @@ init flags url navKey =
             , theme = stringToTheme flags.velaTheme
             , shift = False
             , visibility = Visible
+            , walkthrough = Walkthrough.defaultConfig
             }
 
         ( newModel, newPage ) =
@@ -282,6 +285,8 @@ type Msg
     | RefreshSettings Org Repo
     | ClickHook Org Repo BuildNumber
     | SetTheme Theme
+    | SetWalkthroughStep Walkthrough.Step
+    | SetWalkthroughToggle (Maybe Bool)
     | ClickStep Org Repo BuildNumber StepNumber String
     | GotoPage Pagination.Page
       -- Outgoing HTTP requests
@@ -756,6 +761,40 @@ update msg model =
             else
                 ( { model | theme = theme }, Interop.setTheme <| encodeTheme theme )
 
+        SetWalkthroughStep step ->
+            let
+                walkthrough =
+                    model.walkthrough
+            in
+            if step == walkthrough.step then
+                ( model, Cmd.none )
+
+            else
+                ( { model
+                    | walkthrough =
+                        { walkthrough
+                            | step = step
+                            , toggle = False
+                        }
+                  }
+                , Cmd.none
+                )
+
+        SetWalkthroughToggle toggleState ->
+            let
+                walkthrough =
+                    model.walkthrough
+
+                newToggleState =
+                    case toggleState of
+                        Nothing ->
+                            not walkthrough.toggle
+
+                        Just t ->
+                            t
+            in
+            ( { model | walkthrough = { walkthrough | toggle = newToggleState } }, Cmd.none )
+
         GotoPage pageNumber ->
             case model.page of
                 Pages.RepositoryBuilds org repo _ maybePerPage ->
@@ -925,6 +964,7 @@ subscriptions model =
     Sub.batch <|
         [ Interop.onSessionChange decodeOnSessionChange
         , Interop.onThemeChange decodeOnThemeChange
+        , onMouseDown model
         , Browser.Events.onKeyDown (Decode.map OnKeyDown keyDecoder)
         , Browser.Events.onKeyUp (Decode.map OnKeyUp keyDecoder)
         , Browser.Events.onVisibilityChange VisibilityChanged
@@ -1136,6 +1176,86 @@ refreshLogs model org repo buildNumber inSteps focusFragment =
         Cmd.none
 
 
+{-| onMouseDown : takes model and returns subscriptions for handling onMouseDown events at the browser level
+-}
+onMouseDown : Model -> Sub Msg
+onMouseDown model =
+    Sub.batch
+        [ Browser.Events.onMouseDown onMouseDownOverrides
+        , if model.walkthrough.toggle then
+            Browser.Events.onMouseDown (outsideTarget "walkthrough-toggle" <| SetWalkthroughToggle <| Just False)
+
+          else
+            Sub.none
+        ]
+
+
+{-| onMouseDownOverrides : returns decoder for manually dispatching click events via id, specified in idToMouseDownEvent
+-}
+onMouseDownOverrides : Decode.Decoder Msg
+onMouseDownOverrides =
+    Decode.field "target"
+        (Decode.oneOf
+            [ Decode.field "id" Decode.string
+                |> Decode.andThen Decode.succeed
+            , Decode.succeed ""
+            ]
+        )
+        |> Decode.andThen
+            idToMouseDownEvent
+
+
+{-| idToMouseDownEvent : returns decoder for manually dispatching click events via id
+-}
+idToMouseDownEvent : String -> Decode.Decoder Msg
+idToMouseDownEvent id =
+    Decode.succeed <|
+        case id of
+            "walkthrough-toggle-trigger" ->
+                SetWalkthroughToggle Nothing
+
+            _ ->
+                NoOp
+
+
+{-| outsideTarget : returns decoder for handling clicks that occur from outside the currently focused/open dropdown
+-}
+outsideTarget : String -> Msg -> Decode.Decoder Msg
+outsideTarget targetId msg =
+    Decode.field "target" (isOutsideTarget targetId)
+        |> Decode.andThen
+            (\isOutside ->
+                if isOutside then
+                    Decode.succeed msg
+
+                else
+                    Decode.fail "inside dropdown"
+            )
+
+
+{-| isOutsideTarget : returns decoder for determining if click target occurred from within a specified element
+-}
+isOutsideTarget : String -> Decode.Decoder Bool
+isOutsideTarget targetId =
+    Decode.oneOf
+        [ Decode.field "id" Decode.string
+            |> Decode.andThen
+                (\id ->
+                    if targetId == id then
+                        -- found match by id
+                        Decode.succeed False
+
+                    else
+                        -- try next decoder
+                        Decode.fail "continue"
+                )
+        , Decode.lazy (\_ -> isOutsideTarget targetId |> Decode.field "parentNode")
+
+        -- fallback if all previous decoders failed
+        , Decode.succeed True
+        ]
+
+
 
 -- VIEW
 
@@ -1148,7 +1268,8 @@ view model =
     in
     { title = "Vela - " ++ title
     , body =
-        [ lazy2 viewHeader model.session { feedbackLink = model.velaFeedbackURL, docsLink = model.velaDocsURL, theme = model.theme }
+        [ tourOverlay model.walkthrough
+        , lazy2 viewHeader model.session { feedbackLink = model.velaFeedbackURL, docsLink = model.velaDocsURL, theme = model.theme, walkthrough = model.walkthrough }
         , lazy2 Nav.view { page = model.page, user = model.user, sourceRepos = model.sourceRepos } navMsgs
         , main_ [ class "content-wrap" ]
             [ viewUtil model
@@ -1157,6 +1278,16 @@ view model =
         , footer [] [ lazy viewAlerts model.toasties ]
         ]
     }
+
+
+tourOverlay : Walkthrough.Model -> Html Msg
+tourOverlay walkthrough =
+    case walkthrough.step of
+        Walkthrough.Null ->
+            text ""
+
+        _ ->
+            div [ class "tour-overlay" ] [ button [ onClick <| SetWalkthroughStep Walkthrough.Null ] [ div [ class "tour-nav" ] [ text "exit tour" ] ] ]
 
 
 viewContent : Model -> ( String, Html Msg )
@@ -1279,8 +1410,8 @@ viewLogin =
         ]
 
 
-viewHeader : Maybe Session -> { feedbackLink : String, docsLink : String, theme : Theme } -> Html Msg
-viewHeader maybeSession { feedbackLink, docsLink, theme } =
+viewHeader : Maybe Session -> { feedbackLink : String, docsLink : String, theme : Theme, walkthrough : Walkthrough.Model } -> Html Msg
+viewHeader maybeSession { feedbackLink, docsLink, theme, walkthrough } =
     let
         session : Session
         session =
@@ -1308,7 +1439,8 @@ viewHeader maybeSession { feedbackLink, docsLink, theme } =
             ]
         , nav [ class "help-links", attribute "role" "navigation" ]
             [ ul []
-                [ li [] [ viewThemeToggle theme ]
+                [ li [] [ Walkthrough.viewToggle { step = walkthrough.step, toggle = walkthrough.toggle } NoOp SetWalkthroughStep ]
+                , li [] [ viewThemeToggle theme ]
                 , li [] [ a [ href feedbackLink, attribute "aria-label" "go to feedback" ] [ text "feedback" ] ]
                 , li [] [ a [ href docsLink, attribute "aria-label" "go to docs" ] [ text "docs" ] ]
                 , li [] [ FeatherIcons.terminal |> FeatherIcons.withSize 18 |> FeatherIcons.toHtml [] ]
